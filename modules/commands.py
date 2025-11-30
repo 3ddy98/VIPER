@@ -166,7 +166,16 @@ def show_agents_menu():
         elif choice == "2":
             agent_name = Prompt.ask("[bold cyan]Enter a name for the new agent[/bold cyan]")
             agent_desc = Prompt.ask(f"[bold cyan]Enter a description for {agent_name}[/bold cyan]")
-            agent_details = {"name": agent_name, "description": agent_desc}
+            api_key = Prompt.ask(f"[bold cyan]Enter the OpenRouter API key for {agent_name}[/bold cyan] (leave blank to use default)")
+            site_url = Prompt.ask(f"[bold cyan]Enter the site URL for {agent_name}[/bold cyan] (optional)")
+            site_name = Prompt.ask(f"[bold cyan]Enter the site name for {agent_name}[/bold cyan] (optional)")
+            agent_details = {
+                "name": agent_name, 
+                "description": agent_desc,
+                "api_key": api_key,
+                "site_url": site_url,
+                "site_name": site_name
+            }
             if agent_manager.create_agent(agent_name, agent_details):
                 console.print(f"\n[green]✓ Agent '{agent_name}' created successfully.[/green]")
             else:
@@ -175,9 +184,21 @@ def show_agents_menu():
         elif choice == "3":
             agent_name = Prompt.ask("[bold cyan]Enter the name of the agent to modify[/bold cyan]")
             if agent_name in agent_manager.list_agents():
-                new_desc = Prompt.ask(f"[bold cyan]Enter the new description for {agent_name}[/bold cyan]")
-                new_details = agent_manager.get_agent_details(agent_name)
-                new_details["description"] = new_desc
+                agent_details = agent_manager.get_agent_details(agent_name)
+                
+                new_desc = Prompt.ask(f"[bold cyan]Enter the new description for {agent_name}[/bold cyan]", default=agent_details.get("description"))
+                new_api_key = Prompt.ask(f"[bold cyan]Enter the new OpenRouter API key for {agent_name}[/bold cyan]", default=agent_details.get("api_key"))
+                new_site_url = Prompt.ask(f"[bold cyan]Enter the new site URL for {agent_name}[/bold cyan]", default=agent_details.get("site_url"))
+                new_site_name = Prompt.ask(f"[bold cyan]Enter the new site name for {agent_name}[/bold cyan]", default=agent_details.get("site_name"))
+
+                new_details = {
+                    "name": agent_name,
+                    "description": new_desc,
+                    "api_key": new_api_key,
+                    "site_url": new_site_url,
+                    "site_name": new_site_name
+                }
+                
                 if agent_manager.modify_agent(agent_name, new_details):
                     console.print(f"\n[green]✓ Agent '{agent_name}' modified successfully.[/green]")
                 else:

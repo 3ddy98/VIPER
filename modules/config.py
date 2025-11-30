@@ -132,3 +132,8 @@ GOOGLE_SEARCH_CONFIG = {
     "search_engine_id": ""    # Populated from config.json at runtime
 }
 
+# OpenRouter API Configuration
+OPENROUTER_CONFIG = {
+    "api_key": ""  # Populated from config.json at runtime
+}
+

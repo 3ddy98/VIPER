@@ -6,7 +6,8 @@ from rich.panel import Panel
 from rich.prompt import Prompt, Confirm
 
 # Import the configuration dictionaries from the existing config module
-from modules.config import CLIENT_CONFIG, TOOL_CONFIG, UI_CONFIG, CONTEXT_CONFIG, GOOGLE_SEARCH_CONFIG
+from modules.config import CLIENT_CONFIG, TOOL_CONFIG, UI_CONFIG, CONTEXT_CONFIG, GOOGLE_SEARCH_CONFIG, OPENROUTER_CONFIG
+
 
 # Path to the directory that will hold the persisted configuration
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
@@ -67,6 +68,14 @@ def run_first_time_setup():
             "    [cyan]Enter your Google Programmable Search Engine ID (CX ID)[/cyan]"
         )
 
+    # --- Optional: OpenRouter ---
+    console.print("\n[bold]4. Optional: OpenRouter[/bold]")
+    console.print("[dim]  This key is only required for agents that use OpenRouter.[/dim]")
+    if Confirm.ask("  [cyan]Do you want to set up OpenRouter?[/cyan]", default=False):
+        OPENROUTER_CONFIG['api_key'] = Prompt.ask(
+            "    [cyan]Enter your OpenRouter API Key[/cyan]"
+        )
+
     # --- Save Configuration ---
     save_config()
     console.print("\n[green]✓ Configuration saved successfully![/green]")
@@ -94,6 +103,8 @@ def load_config() -> None:
             CONTEXT_CONFIG.update(loaded_config["context"])
         if "google_search" in loaded_config:
             GOOGLE_SEARCH_CONFIG.update(loaded_config["google_search"])
+        if "openrouter" in loaded_config:
+            OPENROUTER_CONFIG.update(loaded_config["openrouter"])
 
     except (json.JSONDecodeError, IOError) as e:
         console.print(f"[red]✗ Error loading configuration from {CONFIG_FILE}: {e}[/red]")
@@ -113,7 +124,8 @@ def save_config() -> None:
         "tool": TOOL_CONFIG,
         "ui": UI_CONFIG,
         "context": CONTEXT_CONFIG,
-        "google_search": GOOGLE_SEARCH_CONFIG
+        "google_search": GOOGLE_SEARCH_CONFIG,
+        "openrouter": OPENROUTER_CONFIG
     }
     
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
