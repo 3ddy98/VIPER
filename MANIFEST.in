@@ -1,0 +1,18 @@
+# Include important project files
+include README.md
+include LICENSE
+include requirements.txt
+include .env.example
+
+# Include all Python files
+recursive-include modules *.py
+recursive-include tools *.py
+recursive-include agents *.json
+
+# Include the main entry point
+include main.py
+
+# Exclude test files and build artifacts
+recursive-exclude tests *
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co]

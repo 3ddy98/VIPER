@@ -3,14 +3,15 @@ import os
 import json
 import shutil
 from modules.renderer import render_agent_list, render_agent_details
+from modules.paths import get_agents_dir
 
 class AgentManager:
     """
     Manages the creation, deletion, and modification of agents.
     """
 
-    def __init__(self, agent_dir="agents"):
-        self.agent_dir = agent_dir
+    def __init__(self, agent_dir=None):
+        self.agent_dir = agent_dir if agent_dir else str(get_agents_dir())
         if not os.path.exists(self.agent_dir):
             os.makedirs(self.agent_dir)
 

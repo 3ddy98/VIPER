@@ -11,6 +11,12 @@ virtual/
 # Data
 data/
 
+# Package build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+
 # Specific files
 .DS_Store
 .vscode/

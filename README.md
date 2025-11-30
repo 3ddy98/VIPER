@@ -43,19 +43,58 @@ VIPER (Viper Is a Python-based Extensible repl) is a highly modular and extensib
 
 ### Installation
 
+There are two ways to install VIPER:
+
+#### Option 1: Global CLI Installation (Recommended)
+
+Install VIPER as a global command-line tool using `pipx`:
+
 1.  Clone the repository:
     ```bash
-    git clone https://github.com/your-username/VIPER.git
+    git clone https://github.com/3ddy98/VIPER.git
     cd VIPER
     ```
-2.  Install the required dependencies:
+
+2.  Install with pipx (recommended for CLI tools):
+    ```bash
+    pipx install .
+    ```
+
+    Or using pip:
+    ```bash
+    pip install .
+    ```
+
+3.  Run VIPER from anywhere:
+    ```bash
+    VIPER                    # Run in current directory
+    VIPER --dir ~/projects   # Run in specified directory
+    VIPER --version          # Show version
+    ```
+
+#### Option 2: Development Installation
+
+For development or running directly from source:
+
+1.  Clone the repository:
+    ```bash
+    git clone https://github.com/3ddy98/VIPER.git
+    cd VIPER
+    ```
+
+2.  Install dependencies:
     ```bash
     pip install -r requirements.txt
     ```
 
+3.  Run from the project directory:
+    ```bash
+    python main.py
+    ```
+
 ### Configuration
 
-1.  Create a `.env` file in the root of the project.
+1.  Create a `.env` file in the VIPER installation directory.
 2.  Add your API keys to the `.env` file:
     ```
     API_KEY=your-primary-api-key
@@ -63,14 +102,20 @@ VIPER (Viper Is a Python-based Extensible repl) is a highly modular and extensib
     GOOGLE_SEARCH_API_KEY=your-google-search-api-key
     ```
     **Note:** Only add the API keys you need. The system will skip prompts for keys found in `.env` during first-time setup.
-3.  Run the application for the first time:
+
+3.  Run VIPER for the first time:
     ```bash
-    python main.py
+    VIPER                    # If using global installation
+    # OR
+    python main.py           # If running from source
     ```
-    The application will generate the default `data/config.json` file and guide you through any remaining setup.
+    The application will generate the default `data/config.json` file in the VIPER installation directory and guide you through any remaining setup.
+
 4.  Optionally, you can customize settings by editing `data/config.json` or using the `/config` command.
 
-**Security Note:** API keys are stored exclusively in `.env` and are never written to `config.json`. The `.env` file is ignored by git, so your keys will never be committed to version control.
+**Important Notes:**
+- **Security:** API keys are stored exclusively in `.env` and are never written to `config.json`. The `.env` file is ignored by git, so your keys will never be committed to version control.
+- **Data Persistence:** VIPER stores all configuration, conversations, and agents in the installation directory. This means your settings and data persist across all working directories. Use `VIPER --dir /path/to/project` to change your current working directory for file operations.
 
 ---
 

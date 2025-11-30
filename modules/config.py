@@ -1,8 +1,11 @@
 """
-Configuration file for SEBESKY-GPT Chat Manager
+Configuration file for VIPER
 
 This module contains all configuration constants used throughout the application.
 """
+
+from pathlib import Path
+from modules.paths import get_data_dir
 
 # OpenAI API Configuration
 # These settings configure the connection to the AI model
@@ -35,7 +38,7 @@ CONTEXT_CONFIG = {
 
 
 # File paths
-CONVERSATIONS_FILE = "data/conversations.json"  # Storage file for conversation history
+CONVERSATIONS_FILE = get_data_dir() / "conversations.json"  # Storage file for conversation history in VIPER installation
 
 # System prompt template
 # This prompt instructs the AI to respond using OpenRouter's standard tool calling format

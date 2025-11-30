@@ -16,6 +16,7 @@ console = Console()
 
 # Import config to access OpenRouter API key loaded from .env
 from modules.config import OPENROUTER_CONFIG
+from modules.paths import get_agents_dir
 
 
 class AgentsTool:
@@ -23,16 +24,17 @@ class AgentsTool:
     A tool that enables the primary agent to invoke other specialized agents with tool calling support.
     """
 
-    def __init__(self, agent_dir: str = "agents", tool_manager=None):
+    def __init__(self, agent_dir: str = None, tool_manager=None):
         """
         Initialize the Agents tool.
 
         Args:
-            agent_dir: Directory where agent configurations are stored
+            agent_dir: Directory where agent configurations are stored (defaults to VIPER installation agents dir)
             tool_manager: Optional ToolManager instance for executing tools
         """
         self.tool_name = "AGENTS"
-        self.agent_dir = agent_dir
+        # Use absolute path from get_agents_dir() if no agent_dir specified
+        self.agent_dir = agent_dir if agent_dir else str(get_agents_dir())
         self.tool_manager = tool_manager
         self.available_agents = self._load_available_agents()
         self._model_capabilities_cache = {}  # Cache model capabilities

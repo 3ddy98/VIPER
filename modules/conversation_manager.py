@@ -19,10 +19,12 @@ from rich.live import Live
 from rich.prompt import Confirm
 
 from modules.config import CLIENT_CONFIG, CONVERSATIONS_FILE, SYSTEM_PROMPT, TOOL_CONFIG, UI_CONFIG
-from modules.renderer import render_json_response, render_plan, render_plan_step_result, render_plan_summary
+from modules.renderer import render_json_response, render_plan, render_plan_step_result, render_plan_summary, render_diff
 from modules.tool_manager import ToolManager
 from modules.token_manager import TokenManager
 from modules.context_manager import ContextManager
+from modules.paths import get_tools_dir
+from modules.response_preprocessor import preprocess_custom_model_response
 
 # Initialize Rich console for output
 console = Console()
@@ -49,7 +51,7 @@ class ConversationManager:
         
         # Initialize Tool Manager if tools are enabled
         if TOOL_CONFIG["tools_enabled"]:
-            self.tool_manager = ToolManager()
+            self.tool_manager = ToolManager(tools_dir=str(get_tools_dir()))
             # Build system prompt with tool specifications
             self.system_prompt = self._build_system_prompt()
         else:
@@ -129,6 +131,10 @@ class ConversationManager:
         tools_text = ""
         for spec in tool_specs:
             tool_name = spec['tool_name']
+
+            # Add tool-level description (includes agents list for AGENTS tool)
+            tools_text += f"\n=== {tool_name} ===\n"
+            tools_text += f"{spec.get('description', '')}\n"
 
             for method in spec.get("methods", []):
                 # Build function name
@@ -422,10 +428,13 @@ class ConversationManager:
 
         console.print("\r" + " " * 80 + "\r", end="")
 
+        # Preprocess the response to handle custom model formats
+        preprocessed_response = preprocess_custom_model_response(full_response)
+
         if self.tool_manager and TOOL_CONFIG["tools_enabled"]:
             try:
-                # Parse response as JSON
-                json_match = json.loads(re.search(r'\{.*\}', re.sub(r'<\|[^|]+\|>', '', full_response), re.DOTALL).group(0))
+                # Parse preprocessed response as JSON
+                json_match = json.loads(preprocessed_response)
 
                 # Check for OpenRouter format tool_calls
                 if "tool_calls" in json_match and json_match["tool_calls"]:
@@ -437,6 +446,18 @@ class ConversationManager:
                         result = self._execute_openrouter_tool_call(tool_call)
                         all_results.append(result)
 
+                        # Render diff if this is an EDIT_FILE tool result
+                        if result.get("success") and result.get("diff"):
+                            # Extract file path from tool call if available
+                            try:
+                                function_args = json.loads(tool_call.get("function", {}).get("arguments", "{}"))
+                                file_path = function_args.get("file_path", "file")
+                                dry_run = result.get("dry_run", False)
+                                render_diff(result["diff"], file_path, dry_run)
+                            except:
+                                # Fallback if we can't extract file path
+                                render_diff(result["diff"], "file", result.get("dry_run", False))
+
                     # Check if all successful
                     all_success = all(r.get("success") for r in all_results)
 
@@ -445,10 +466,13 @@ class ConversationManager:
                         # Add tool results to conversation
                         results_msg = f"Tool execution results:\n{json.dumps(all_results, indent=2)}"
                         self.add_message(conv_id, "system", results_msg)
+                        # Recursively call stream_response to get the final response
+                        # The recursive call will handle its own rendering
                         return self.stream_response(conv_id, "Please provide your response based on the tool execution results.")
                     else:
                         failed = [r for r in all_results if not r.get("success")]
                         console.print(f"[red]Some tools failed: {json.dumps(failed, indent=2)}[/red]\n")
+                        # Fall through to render the original response even if tools failed
 
             except (json.JSONDecodeError, AttributeError):
                 # Not a valid tool call, treat as regular message
@@ -456,9 +480,11 @@ class ConversationManager:
             except Exception as e:
                 console.print(f"[yellow]⚠ Could not parse tool call: {e}[/yellow]\n")
 
-        render_json_response(full_response)
-        self.add_message(conv_id, "assistant", full_response)
-        return full_response
+        # Render the preprocessed response for clean display
+        render_json_response(preprocessed_response)
+        # But save the original full response to conversation history
+        self.add_message(conv_id, "assistant", preprocessed_response)
+        return preprocessed_response
 
     def list_tool_details(self) -> List[Dict[str, str]]:
         """Retrieves a list of available tools with their names and descriptions."""

@@ -19,6 +19,7 @@ from rich.markdown import Markdown
 from rich import box
 from rich.text import Text
 from rich.rule import Rule
+from rich.syntax import Syntax
 from modules.banner import get_banner
 
 
@@ -139,12 +140,21 @@ def render_json_response(response_text: str):
     try:
         # Parse the JSON response
         data = json.loads(cleaned_text)
-        
+
+        # Track if we rendered anything
+        rendered_something = False
+
         # Render main response with markdown formatting
+        # Check both "response" (legacy) and "content" (OpenRouter standard)
         if "response" in data:
             console.print("\n")
             console.print(Markdown(data["response"]))
-        
+            rendered_something = True
+        elif "content" in data and isinstance(data["content"], str):
+            console.print("\n")
+            console.print(Markdown(data["content"]))
+            rendered_something = True
+
         # Render code snippets in styled panels
         if "code_snippets" in data and data["code_snippets"]:
             console.print("\n[bold cyan]📝 Code Snippets:[/bold cyan]")
@@ -152,11 +162,11 @@ def render_json_response(response_text: str):
                 lang = snippet.get("language", "text")
                 code = snippet.get("code", "")
                 desc = snippet.get("description", "")
-                
+
                 # Show description if available
                 if desc:
                     console.print(f"\n[dim]{desc}[/dim]")
-                
+
                 # Display code in a bordered panel
                 console.print(Panel(
                     code,
@@ -164,21 +174,29 @@ def render_json_response(response_text: str):
                     border_style="cyan",
                     box=box.ROUNDED
                 ))
-        
+            rendered_something = True
+
         # Render key points as a bulleted list
         if "key_points" in data and data["key_points"]:
             console.print("\n[bold yellow]🔑 Key Points:[/bold yellow]")
             for point in data["key_points"]:
                 console.print(f"  • {point}")
-        
+            rendered_something = True
+
         # Render next steps as a numbered list
         if "next_steps" in data and data["next_steps"]:
             console.print("\n[bold green]➡️  Next Steps:[/bold green]")
             for idx, step in enumerate(data["next_steps"], 1):
                 console.print(f"  {idx}. {step}")
-        
+            rendered_something = True
+
+        # If we didn't render anything from the structured fields, show the raw JSON
+        if not rendered_something:
+            console.print("\n")
+            console.print(Markdown(f"```json\n{json.dumps(data, indent=2)}\n```"))
+
         console.print()
-        
+
     except json.JSONDecodeError:
         # If JSON parsing fails, fall back to markdown rendering
         console.print("\n[yellow]⚠️  Response not in JSON format, displaying as markdown:[/yellow]\n")
@@ -391,22 +409,142 @@ def render_agent_list(agents: list):
 def render_agent_details(agent_details: dict):
     """
     Display the details of an agent in a panel.
-    
+
     Args:
         agent_details: Dictionary of agent details
     """
     if not agent_details:
         console.print(f"\n[yellow]No agent details found.[/yellow]\n")
         return
-        
+
     panel_content = f"[bold]Name:[/bold] {agent_details.get('name', 'N/A')}\n"
     panel_content += f"[bold]Description:[/bold] {agent_details.get('description', 'N/A')}"
-    
+
     console.print(Panel(
         panel_content,
         title="Agent Details",
         box=box.ROUNDED,
         border_style="cyan",
         padding=(1, 2)
+    ))
+    console.print()
+
+
+def render_diff(diff_text: str, file_path: str = "file", dry_run: bool = False):
+    """
+    Render a unified diff with syntax highlighting and line numbers.
+
+    Displays diffs in a git-style format with:
+    - Green background for added lines
+    - Red background for removed lines
+    - Line numbers on the left
+    - File path in header
+
+    Args:
+        diff_text: Unified diff string
+        file_path: Path to the file being edited
+        dry_run: Whether this is a dry run preview
+    """
+    if not diff_text:
+        console.print("[dim]No changes to display[/dim]")
+        return
+
+    # Parse the diff to extract line numbers and changes
+    lines = diff_text.split('\n')
+
+    # Build styled output
+    output = Text()
+
+    # Track line numbers
+    old_line_num = 0
+    new_line_num = 0
+    in_hunk = False
+
+    for line in lines:
+        # File header lines
+        if line.startswith('---') or line.startswith('+++'):
+            styled_line = Text(line, style="bold cyan")
+            output.append(styled_line)
+            output.append("\n")
+            continue
+
+        # Hunk header (e.g., @@ -1,4 +1,4 @@)
+        if line.startswith('@@'):
+            # Extract line numbers from hunk header
+            match = re.search(r'@@ -(\d+),?\d* \+(\d+),?\d* @@', line)
+            if match:
+                old_line_num = int(match.group(1))
+                new_line_num = int(match.group(2))
+                in_hunk = True
+
+            styled_line = Text(line, style="bold magenta")
+            output.append(styled_line)
+            output.append("\n")
+            continue
+
+        if not in_hunk:
+            continue
+
+        # Removed line (starts with -)
+        if line.startswith('-') and not line.startswith('---'):
+            # Line number and content
+            line_num_str = f"{old_line_num:4d} "
+            content = line[1:]  # Remove the - prefix
+
+            styled_line = Text()
+            styled_line.append(line_num_str, style="dim red")
+            styled_line.append("│ ", style="dim")
+            styled_line.append(f"- {content}", style="red on #2d0d0d")
+            output.append(styled_line)
+            output.append("\n")
+
+            old_line_num += 1
+            continue
+
+        # Added line (starts with +)
+        if line.startswith('+') and not line.startswith('+++'):
+            # Line number and content
+            line_num_str = f"{new_line_num:4d} "
+            content = line[1:]  # Remove the + prefix
+
+            styled_line = Text()
+            styled_line.append(line_num_str, style="dim green")
+            styled_line.append("│ ", style="dim")
+            styled_line.append(f"+ {content}", style="green on #0d2d0d")
+            output.append(styled_line)
+            output.append("\n")
+
+            new_line_num += 1
+            continue
+
+        # Context line (starts with space or is empty)
+        if line.startswith(' ') or line == '':
+            content = line[1:] if line else ''
+
+            # Show both line numbers for context
+            line_num_str = f"{old_line_num:4d} "
+
+            styled_line = Text()
+            styled_line.append(line_num_str, style="dim")
+            styled_line.append("│ ", style="dim")
+            styled_line.append(f"  {content}", style="dim white")
+            output.append(styled_line)
+            output.append("\n")
+
+            old_line_num += 1
+            new_line_num += 1
+            continue
+
+    # Display in a panel
+    title = f"{'[DRY RUN] ' if dry_run else ''}Changes to {file_path}"
+    border_style = "yellow" if dry_run else "green"
+
+    console.print()
+    console.print(Panel(
+        output,
+        title=title,
+        box=box.ROUNDED,
+        border_style=border_style,
+        padding=(0, 1)
     ))
     console.print()

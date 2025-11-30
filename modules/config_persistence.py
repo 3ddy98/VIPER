@@ -7,14 +7,15 @@ from rich.prompt import Prompt, Confirm
 
 # Import the configuration dictionaries from the existing config module
 from modules.config import CLIENT_CONFIG, TOOL_CONFIG, UI_CONFIG, CONTEXT_CONFIG, GOOGLE_SEARCH_CONFIG, OPENROUTER_CONFIG
+from modules.paths import get_data_dir, ensure_data_dir, get_viper_root
 
 
-# Path to the directory that will hold the persisted configuration
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+# Path to the directory that will hold the persisted configuration (in VIPER installation root)
+DATA_DIR = get_data_dir()
 # Path to the JSON file that stores the configuration
 CONFIG_FILE = DATA_DIR / "config.json"
-# Path to the .env file in the project root
-ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
+# Path to the .env file in the VIPER installation root
+ENV_FILE = get_viper_root() / ".env"
 
 # Initialize console for printing messages
 console = Console()
