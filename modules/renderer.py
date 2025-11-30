@@ -364,3 +364,49 @@ def render_input_box():
     Renders a separator line above the input prompt.
     """
     console.print(Rule(style="dim"))
+
+
+def render_agent_list(agents: list):
+    """
+    Display agents in a formatted table.
+    
+    Args:
+        agents: List of agent names
+    """
+    if not agents:
+        console.print(f"\n[yellow]No agents found.[/yellow]\n")
+        return
+    
+    table = Table(title="Available Agents", box=box.ROUNDED, border_style="cyan")
+    table.add_column("Agent Name", style="cyan", no_wrap=True)
+    
+    for agent in agents:
+        table.add_row(agent)
+    
+    console.print("\n")
+    console.print(table)
+    console.print()
+
+
+def render_agent_details(agent_details: dict):
+    """
+    Display the details of an agent in a panel.
+    
+    Args:
+        agent_details: Dictionary of agent details
+    """
+    if not agent_details:
+        console.print(f"\n[yellow]No agent details found.[/yellow]\n")
+        return
+        
+    panel_content = f"[bold]Name:[/bold] {agent_details.get('name', 'N/A')}\n"
+    panel_content += f"[bold]Description:[/bold] {agent_details.get('description', 'N/A')}"
+    
+    console.print(Panel(
+        panel_content,
+        title="Agent Details",
+        box=box.ROUNDED,
+        border_style="cyan",
+        padding=(1, 2)
+    ))
+    console.print()

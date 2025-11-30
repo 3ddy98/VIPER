@@ -15,12 +15,14 @@ from rich.table import Table
 from rich import box
 
 from modules.conversation_manager import ConversationManager
-from modules.renderer import show_conversations_table, display_conversation_history, display_start_of_conversation
+from modules.agent_manager import AgentManager
+from modules.renderer import show_conversations_table, display_conversation_history, display_start_of_conversation, render_agent_list
 from modules.config_persistence import save_config
 from modules.config import TOOL_CONFIG, UI_CONFIG, CLIENT_CONFIG
 
 # Initialize Rich console for output
 console = Console()
+agent_manager = AgentManager()
 
 
 def show_config_menu():
@@ -128,6 +130,77 @@ def show_config_menu():
             break
 
 
+def show_agents_menu():
+    """
+    Display and handle the agent management menu.
+    
+    Allows users to list, create, modify, and delete agents.
+    """
+    while True:
+        console.print("\n" + "=" * 60)
+        console.print("[bold cyan]🤖 Agent Management Menu[/bold cyan]")
+        console.print("=" * 60 + "\n")
+        
+        table = Table(box=box.ROUNDED, border_style="cyan")
+        table.add_column("Option", style="cyan", width=4)
+        table.add_column("Description", style="white")
+        
+        table.add_row("1", "List all agents")
+        table.add_row("2", "Create a new agent")
+        table.add_row("3", "Modify an existing agent")
+        table.add_row("4", "Delete an agent")
+        table.add_row("9", "Exit Agent Management Menu")
+        
+        console.print(table)
+        console.print()
+        
+        choice = Prompt.ask(
+            "[bold cyan]Select an option (1-4) or 9 to exit[/bold cyan]",
+            choices=["1", "2", "3", "4", "9"]
+        )
+        
+        if choice == "1":
+            agents = agent_manager.list_agents()
+            render_agent_list(agents)
+            
+        elif choice == "2":
+            agent_name = Prompt.ask("[bold cyan]Enter a name for the new agent[/bold cyan]")
+            agent_desc = Prompt.ask(f"[bold cyan]Enter a description for {agent_name}[/bold cyan]")
+            agent_details = {"name": agent_name, "description": agent_desc}
+            if agent_manager.create_agent(agent_name, agent_details):
+                console.print(f"\n[green]✓ Agent '{agent_name}' created successfully.[/green]")
+            else:
+                console.print(f"\n[red]Error: Agent '{agent_name}' already exists.[/red]")
+
+        elif choice == "3":
+            agent_name = Prompt.ask("[bold cyan]Enter the name of the agent to modify[/bold cyan]")
+            if agent_name in agent_manager.list_agents():
+                new_desc = Prompt.ask(f"[bold cyan]Enter the new description for {agent_name}[/bold cyan]")
+                new_details = agent_manager.get_agent_details(agent_name)
+                new_details["description"] = new_desc
+                if agent_manager.modify_agent(agent_name, new_details):
+                    console.print(f"\n[green]✓ Agent '{agent_name}' modified successfully.[/green]")
+                else:
+                    console.print(f"\n[red]Error: Could not modify agent '{agent_name}'.[/red]")
+            else:
+                console.print(f"\n[red]Error: Agent '{agent_name}' not found.[/red]")
+
+        elif choice == "4":
+            agent_name = Prompt.ask("[bold cyan]Enter the name of the agent to delete[/bold cyan]")
+            if agent_name in agent_manager.list_agents():
+                if Confirm.ask(f"\n[red]Are you sure you want to delete agent '{agent_name}'?[/red]", default=False):
+                    if agent_manager.delete_agent(agent_name):
+                        console.print(f"\n[green]✓ Agent '{agent_name}' deleted successfully.[/green]")
+                    else:
+                        console.print(f"\n[red]Error: Could not delete agent '{agent_name}'.[/red]")
+            else:
+                console.print(f"\n[red]Error: Agent '{agent_name}' not found.[/red]")
+            
+        elif choice == "9":
+            console.print("\n[cyan]Exiting agent management menu...[/cyan]\n")
+            break
+
+
 def handle_command(
     manager: ConversationManager, 
     command: str, 
@@ -171,7 +244,13 @@ def handle_command(
         console.print("  [cyan]/delete <id>[/cyan]       - Delete a conversation")
         console.print("  [cyan]/config[/cyan]            - Open configuration menu")
         console.print("  [cyan]/tools[/cyan]             - List all available tools and their descriptions")
+        console.print("  [cyan]/agents[/cyan]            - Open agent management menu")
         console.print("  [cyan]/exit[/cyan]              - Exit the application\n")
+        return False, current_conv_id
+    
+    # Agents command - open agent management menu
+    elif cmd == "agents":
+        show_agents_menu()
         return False, current_conv_id
     
     # Config command - open configuration menu
