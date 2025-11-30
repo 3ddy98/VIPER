@@ -73,13 +73,19 @@ class ToolManager:
                 for name, obj in inspect.getmembers(module, inspect.isclass):
                     if name.endswith("Tool") and obj.__module__ == module.__name__:
                         # Instantiate the tool
-                        tool_instance = obj(base_path=self.base_path) if self.base_path else obj()
-                        
+                        # Special handling for AgentsTool which needs the tool_manager
+                        if name == "AgentsTool":
+                            tool_instance = obj(tool_manager=self)
+                        elif self.base_path:
+                            tool_instance = obj(base_path=self.base_path)
+                        else:
+                            tool_instance = obj()
+
                         # Get tool specification
                         if hasattr(tool_instance, 'get_tool_spec'):
                             spec = tool_instance.get_tool_spec()
                             tool_name = spec.get('tool_name', name)
-                            
+
                             # Register the tool
                             self.tools[tool_name] = tool_instance
                             self.tool_specs[tool_name] = spec

@@ -18,6 +18,9 @@ class AgentManager:
         """
         Creates a new agent.
 
+        Agents are invoked via the AGENTS tool and only need a JSON configuration file.
+        The configuration includes the agent's name, description, API key, and model.
+
         Args:
             agent_name (str): The name of the agent.
             agent_details (dict): A dictionary of agent details.
@@ -31,15 +34,10 @@ class AgentManager:
 
         os.makedirs(agent_path)
 
-        # Create the agent's JSON file
+        # Create the agent's JSON configuration file
         json_path = os.path.join(agent_path, f"{agent_name}.json")
         with open(json_path, 'w') as f:
             json.dump(agent_details, f, indent=4)
-
-        # Copy the template agent file
-        template_path = "agent/template/template_agent.py"
-        new_agent_path = os.path.join(agent_path, f"{agent_name}_agent.py")
-        shutil.copy(template_path, new_agent_path)
 
         return True
 

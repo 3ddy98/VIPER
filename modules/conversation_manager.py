@@ -114,29 +114,51 @@ class ConversationManager:
     
     def _build_system_prompt(self) -> str:
         """
-        Build the system prompt with tool specifications.
-        
+        Build the system prompt with tool specifications in OpenRouter format.
+
         Returns:
             str: System prompt with tool specs injected
         """
         if not self.tool_manager:
             return SYSTEM_PROMPT.replace("{TOOLS_SPEC}", "No tools available")
-        
+
         # Get tool specifications
         tool_specs = self.tool_manager.get_all_tool_specs()
-        
-        # Format tool specs for the prompt
+
+        # Format tool specs for the prompt in OpenRouter function format
         tools_text = ""
         for spec in tool_specs:
-            tools_text += f"\n\nTool: {spec['tool_name']}\n"
-            tools_text += f"Description: {spec['description']}\n"
-            tools_text += f"Methods:\n"
-            
+            tool_name = spec['tool_name']
+
             for method in spec.get("methods", []):
-                tools_text += f"  - {method['name']}: {method['description']}\n"
-                tools_text += f"    Parameters: {json.dumps(method.get('parameters', {}), indent=6)}\n"
-                tools_text += f"    Destructive: {method.get('destruct_flag', False)}\n"
-        
+                # Build function name
+                function_name = f"{tool_name}__{method['name']}"
+
+                # Build parameters schema
+                properties = {}
+                required_params = []
+
+                for param_name, param_spec in method.get('parameters', {}).items():
+                    properties[param_name] = {
+                        "type": param_spec.get("type", "string"),
+                        "description": param_spec.get("description", "")
+                    }
+                    if param_spec.get("required", False):
+                        required_params.append(param_name)
+
+                # Format as OpenRouter function
+                tools_text += f"\nFunction: {function_name}\n"
+                tools_text += f"Description: {method['description']}\n"
+                tools_text += f"Parameters:\n"
+                tools_text += json.dumps({
+                    "type": "object",
+                    "properties": properties,
+                    "required": required_params
+                }, indent=2)
+                tools_text += "\n"
+                if method.get('destruct_flag', False):
+                    tools_text += "⚠️  DESTRUCTIVE - This operation modifies or deletes data\n"
+
         return SYSTEM_PROMPT.replace("{TOOLS_SPEC}", tools_text)
     
     def create_conversation(self, title: str) -> str:
@@ -257,21 +279,73 @@ class ConversationManager:
             self.conversations[conv_id]["messages"].append({"role": role, "content": content})
             self.save_conversations()
     
-    def _execute_tool_with_confirmation(self, tool_call: Dict) -> Dict:
-        """Execute a tool call, confirming if destructive."""
+    def _execute_openrouter_tool_call(self, tool_call: Dict) -> Dict:
+        """
+        Execute an OpenRouter format tool call.
+
+        Args:
+            tool_call: Tool call in OpenRouter format with function.name and function.arguments
+
+        Returns:
+            Dict with execution results
+        """
         if not self.tool_manager:
             return {"success": False, "error": "Tools are not enabled"}
-        
+
+        try:
+            # Parse OpenRouter format
+            function = tool_call.get("function", {})
+            function_name = function.get("name", "")
+            arguments_str = function.get("arguments", "{}")
+
+            # Parse function name (format: TOOL_NAME__method_name)
+            if "__" not in function_name:
+                return {"success": False, "error": f"Invalid function name format: {function_name}"}
+
+            tool_name, method = function_name.split("__", 1)
+
+            # Parse arguments
+            params = json.loads(arguments_str) if isinstance(arguments_str, str) else arguments_str
+
+            # Check if destructive
+            method_spec = self.tool_manager._get_method_spec(tool_name, method)
+            is_destructive = method_spec.get("destruct_flag", False) if method_spec else False
+
+            needs_confirmation = (is_destructive and not TOOL_CONFIG["auto_execute_destructive"]) or \
+                                 (not is_destructive and not TOOL_CONFIG["auto_execute_non_destructive"])
+
+            if needs_confirmation:
+                console.print(f"\n[yellow]Tool Call Request:[/yellow]")
+                console.print(f"  Function: [cyan]{function_name}[/cyan]")
+                console.print(f"  Parameters: {json.dumps(params, indent=2)}")
+                if not Confirm.ask("\n[yellow]Execute this tool?[/yellow]", default=True):
+                    return {"success": False, "error": "Tool execution cancelled by user"}
+            else:
+                console.print(f"\n[dim]Auto-executing: {function_name}[/dim]")
+
+            # Execute the tool
+            result = self.tool_manager.execute_tool_method(tool_name, method, **params)
+            result["function_called"] = function_name
+            return result
+
+        except Exception as e:
+            return {"success": False, "error": f"Tool execution failed: {str(e)}"}
+
+    def _execute_tool_with_confirmation(self, tool_call: Dict) -> Dict:
+        """Execute a tool call, confirming if destructive. (DEPRECATED - use OpenRouter format)"""
+        if not self.tool_manager:
+            return {"success": False, "error": "Tools are not enabled"}
+
         tool_name = tool_call.get("tool_name")
         method = tool_call.get("method")
         params = tool_call.get("params", {})
-        
+
         method_spec = self.tool_manager._get_method_spec(tool_name, method)
         is_destructive = method_spec.get("destruct_flag", False) if method_spec else False
-        
+
         needs_confirmation = (is_destructive and not TOOL_CONFIG["auto_execute_destructive"]) or \
                              (not is_destructive and not TOOL_CONFIG["auto_execute_non_destructive"])
-        
+
         if needs_confirmation:
             console.print(f"\n[yellow]Tool Call Request:[/yellow]")
             console.print(f"  Tool: [cyan]{tool_name}.{method}[/cyan]")
@@ -280,7 +354,7 @@ class ConversationManager:
                 return {"success": False, "error": "Tool execution cancelled by user"}
         else:
             console.print(f"\n[dim]Auto-executing: {tool_name}.{method}[/dim]")
-        
+
         return self.tool_manager.execute_tool_method(tool_name, method, **params)
     
     def _execute_plan(self, plan: Dict) -> Dict:
@@ -347,32 +421,40 @@ class ConversationManager:
                         live.update(f"[dim]{full_response}[/dim]")
 
         console.print("\r" + " " * 80 + "\r", end="")
-        
+
         if self.tool_manager and TOOL_CONFIG["tools_enabled"]:
             try:
+                # Parse response as JSON
                 json_match = json.loads(re.search(r'\{.*\}', re.sub(r'<\|[^|]+\|>', '', full_response), re.DOTALL).group(0))
-                
-                handler = None
-                if "plan" in json_match and json_match["plan"]:
-                    handler = lambda: self._execute_plan(json_match["plan"])
-                elif "tool" in json_match and json_match["tool"]:
-                    handler = lambda: self._execute_tool_with_confirmation(json_match["tool"])
 
-                if handler:
-                    result = handler()
-                    if result.get("success"):
-                        console.print("[green]Operation successful. Getting final response...[/green]\n")
-                        result_msg = f"Operation result: {json.dumps(result, indent=2)}"
-                        self.add_message(conv_id, "system", result_msg)
-                        return self.stream_response(conv_id, "Please provide your response based on the operation results.")
+                # Check for OpenRouter format tool_calls
+                if "tool_calls" in json_match and json_match["tool_calls"]:
+                    tool_calls = json_match["tool_calls"]
+
+                    # Execute all tool calls
+                    all_results = []
+                    for tool_call in tool_calls:
+                        result = self._execute_openrouter_tool_call(tool_call)
+                        all_results.append(result)
+
+                    # Check if all successful
+                    all_success = all(r.get("success") for r in all_results)
+
+                    if all_success:
+                        console.print("[green]Tool execution successful. Getting final response...[/green]\n")
+                        # Add tool results to conversation
+                        results_msg = f"Tool execution results:\n{json.dumps(all_results, indent=2)}"
+                        self.add_message(conv_id, "system", results_msg)
+                        return self.stream_response(conv_id, "Please provide your response based on the tool execution results.")
                     else:
-                        console.print(f"[red]Operation failed: {result.get('error')}[/red]\n")
+                        failed = [r for r in all_results if not r.get("success")]
+                        console.print(f"[red]Some tools failed: {json.dumps(failed, indent=2)}[/red]\n")
 
             except (json.JSONDecodeError, AttributeError):
-                # Not a valid tool/plan call, treat as regular message
+                # Not a valid tool call, treat as regular message
                 pass
             except Exception as e:
-                console.print(f"[yellow]⚠ Could not parse tool/plan call: {e}[/yellow]\n")
+                console.print(f"[yellow]⚠ Could not parse tool call: {e}[/yellow]\n")
 
         render_json_response(full_response)
         self.add_message(conv_id, "assistant", full_response)

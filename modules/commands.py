@@ -245,23 +245,26 @@ def show_agents_menu():
         elif choice == "2":
             agent_name = Prompt.ask("[bold cyan]Enter a name for the new agent[/bold cyan]")
             agent_desc = Prompt.ask(f"[bold cyan]Enter a description for {agent_name}[/bold cyan]")
-            api_key = Prompt.ask(f"[bold cyan]Enter the OpenRouter API key for {agent_name}[/bold cyan] (leave blank to use default)")
-            site_url = Prompt.ask(f"[bold cyan]Enter the site URL for {agent_name}[/bold cyan] (optional)")
-            site_name = Prompt.ask(f"[bold cyan]Enter the site name for {agent_name}[/bold cyan] (optional)")
-            
+
+            # Note: API key is loaded from .env (OPEN_ROUTER_API_KEY), not stored in agent config
+            console.print("[dim]  API Key will be loaded from .env (OPEN_ROUTER_API_KEY)[/dim]")
+
+            site_url = Prompt.ask(f"[bold cyan]Enter the site URL for {agent_name}[/bold cyan] (optional, press Enter to skip)", default="")
+            site_name = Prompt.ask(f"[bold cyan]Enter the site name for {agent_name}[/bold cyan] (optional, press Enter to skip)", default="")
+
             selected_model = _select_model_from_openrouter()
-            
+
             if selected_model:
                 agent_details = {
-                    "name": agent_name, 
+                    "name": agent_name,
                     "description": agent_desc,
-                    "api_key": api_key,
                     "site_url": site_url,
                     "site_name": site_name,
                     "model": selected_model
                 }
                 if agent_manager.create_agent(agent_name, agent_details):
                     console.print(f"\n[green]✓ Agent '{agent_name}' created successfully.[/green]")
+                    console.print(f"[dim]  API key will be loaded from .env when agent is invoked[/dim]")
                 else:
                     console.print(f"\n[red]Error: Agent '{agent_name}' already exists.[/red]")
             else:
@@ -271,12 +274,15 @@ def show_agents_menu():
             agent_name = Prompt.ask("[bold cyan]Enter the name of the agent to modify[/bold cyan]")
             if agent_name in agent_manager.list_agents():
                 agent_details = agent_manager.get_agent_details(agent_name)
-                
+
                 new_desc = Prompt.ask(f"[bold cyan]Enter the new description for {agent_name}[/bold cyan]", default=agent_details.get("description"))
-                new_api_key = Prompt.ask(f"[bold cyan]Enter the new OpenRouter API key for {agent_name}[/bold cyan]", default=agent_details.get("api_key"))
-                new_site_url = Prompt.ask(f"[bold cyan]Enter the new site URL for {agent_name}[/bold cyan]", default=agent_details.get("site_url"))
-                new_site_name = Prompt.ask(f"[bold cyan]Enter the new site name for {agent_name}[/bold cyan]", default=agent_details.get("site_name"))
-                
+
+                # Note: API key is loaded from .env, not stored in agent config
+                console.print("[dim]  API Key is loaded from .env (OPEN_ROUTER_API_KEY)[/dim]")
+
+                new_site_url = Prompt.ask(f"[bold cyan]Enter the new site URL for {agent_name}[/bold cyan]", default=agent_details.get("site_url", ""))
+                new_site_name = Prompt.ask(f"[bold cyan]Enter the new site name for {agent_name}[/bold cyan]", default=agent_details.get("site_name", ""))
+
                 console.print(f"[bold cyan]Current model: {agent_details.get('model', 'Not set')}[/bold cyan]")
                 if Confirm.ask("[bold cyan]Do you want to change the model?[/bold cyan]"):
                     selected_model = _select_model_from_openrouter()
@@ -287,12 +293,11 @@ def show_agents_menu():
                     new_details = {
                         "name": agent_name,
                         "description": new_desc,
-                        "api_key": new_api_key,
                         "site_url": new_site_url,
                         "site_name": new_site_name,
                         "model": selected_model
                     }
-                    
+
                     if agent_manager.modify_agent(agent_name, new_details):
                         console.print(f"\n[green]✓ Agent '{agent_name}' modified successfully.[/green]")
                     else:

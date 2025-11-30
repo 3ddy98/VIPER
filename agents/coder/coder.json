@@ -1,4 +1,7 @@
 {
-    "name": "coder",
-    "description": "This agent is utilized for programming"
+    "name": "Coder",
+    "description": "This agent is used for programming",
+    "site_url": "",
+    "site_name": "",
+    "model": "qwen/qwen-2.5-coder-32b-instruct"
 }

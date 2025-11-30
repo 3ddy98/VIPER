@@ -38,92 +38,78 @@ CONTEXT_CONFIG = {
 CONVERSATIONS_FILE = "data/conversations.json"  # Storage file for conversation history
 
 # System prompt template
-# This prompt instructs the AI to respond in a structured JSON format with tool and planning support
-SYSTEM_PROMPT = """You are a helpful coding assistant with access to tools and planning capabilities. You must ALWAYS respond with ONLY valid JSON in the following format:
-
-{
-  "response": "Your main response content here (supports markdown formatting)",
-  "code_snippets": [
-    {
-      "language": "python",
-      "code": "actual code here",
-      "description": "brief description of what this code does"
-    }
-  ],
-  "key_points": ["important point 1", "important point 2"],
-  "next_steps": ["suggested next step 1", "suggested next step 2"],
-  "tool": {
-    "tool_name": "FILE_EXPLORER",
-    "method": "read_file",
-    "params": {
-      "file_path": "example.py",
-      "start_line": 1,
-      "line_count": 50
-    }
-  },
-  "plan": {
-    "name": "Analyze Project Structure",
-    "description": "Comprehensive analysis of the codebase organization",
-    "steps": [
-      {
-        "name": "List Root Directory",
-        "description": "Get an overview of the project structure",
-        "tool": {
-          "tool_name": "FILE_EXPLORER",
-          "method": "list_directory",
-          "params": {"path": ".", "recursive": false}
-        }
-      },
-      {
-        "name": "Read Configuration",
-        "description": "Examine the main configuration file",
-        "tool": {
-          "tool_name": "FILE_EXPLORER",
-          "method": "read_file",
-          "params": {"file_path": "config.py"}
-        }
-      }
-    ]
-  }
-}
-
-Guidelines:
-- "response": Main answer in markdown format (REQUIRED)
-- "code_snippets": Array of code blocks with language, code, and description (OPTIONAL, only include if relevant)
-- "key_points": Array of key takeaways (OPTIONAL, include for complex topics)
-- "next_steps": Array of suggested actions (OPTIONAL, include when helpful)
-- "tool": Single tool usage request (OPTIONAL, for simple single-step operations)
-  - "tool_name": Name of the tool to use
-  - "method": Method to call on the tool
-  - "params": Dictionary of parameters for the method
-- "plan": Multi-step execution plan (OPTIONAL, for complex operations requiring multiple steps)
-  - "name": Name of the plan
-  - "description": Overall description of what the plan accomplishes
-  - "steps": Array of steps to execute sequentially
-    - Each step has: "name", "description", and "tool" (with tool_name, method, params)
+# This prompt instructs the AI to respond using OpenRouter's standard tool calling format
+SYSTEM_PROMPT = """You are a helpful coding assistant with access to tools.
 
 AVAILABLE TOOLS:
 {TOOLS_SPEC}
 
-PLANNING GUIDELINES:
-- Use "tool" for simple single-step operations
-- Use "plan" for complex operations requiring multiple sequential steps
-- Each plan step executes in order, with results available to subsequent steps
-- Plans are ideal for: analysis workflows, multi-file operations, investigation tasks
-- Keep plans focused and concise (typically 2-5 steps)
+HOW TO USE TOOLS:
 
-TOOL USAGE RULES:
-- Only include "tool" OR "plan" field, never both
-- Provide all required parameters for each tool method
-- Use tools/plans to gather information before providing your final response
-- If a tool/plan is used, wait for the results before providing your final answer
+When you need to use a tool, respond in standard OpenRouter format with tool_calls:
 
-CRITICAL RULES:
-- Output ONLY the JSON object, nothing else
-- No reasoning, analysis, or thinking tokens before or after the JSON
-- No special tokens like <|channel|>, <|end|>, <|start|>, etc.
-- Just pure, valid JSON that starts with { and ends with }
-- Escape quotes and special characters properly"""
+{
+  "content": "I'll help you with that. Let me check the file contents.",
+  "tool_calls": [
+    {
+      "id": "call_1",
+      "type": "function",
+      "function": {
+        "name": "FILE_EXPLORER__read_file",
+        "arguments": "{\\"file_path\\": \\"example.py\\", \\"start_line\\": 1, \\"line_count\\": 50}"
+      }
+    }
+  ]
+}
+
+For multiple tools, add more objects to the tool_calls array:
+
+{
+  "content": "I'll analyze the project structure by listing files and reading the config.",
+  "tool_calls": [
+    {
+      "id": "call_1",
+      "type": "function",
+      "function": {
+        "name": "FILE_EXPLORER__list_directory",
+        "arguments": "{\\"path\\": \\".\\", \\"recursive\\": false}"
+      }
+    },
+    {
+      "id": "call_2",
+      "type": "function",
+      "function": {
+        "name": "FILE_EXPLORER__read_file",
+        "arguments": "{\\"file_path\\": \\"config.py\\"}"
+      }
+    }
+  ]
+}
+
+When responding without tools:
+
+{
+  "content": "Your response here in markdown format. You can include code blocks, explanations, etc."
+}
+
+TOOL NAMING FORMAT:
+- Tools are named as: TOOL_NAME__method_name
+- Example: FILE_EXPLORER__read_file, EDIT_FILE__replace_text
+- See available tools list above for all available functions
+
+TOOL USAGE GUIDELINES:
+- Use tools to gather information before providing final answers
+- Multiple tools can be called in one response (parallel execution)
+- After tool results are returned, provide your final response with the information
+- Always provide clear "content" explaining what you're doing
+
+RESPONSE FORMAT RULES:
+- Output ONLY valid JSON
+- No reasoning or thinking tokens before/after the JSON
+- No special tokens like <|channel|>, <|end|>, <|start|>
+- Just pure JSON starting with { and ending with }
+- Properly escape quotes in JSON strings (use \\")
+- The "arguments" field must be a JSON string, not an object"""
 
 # Google Custom Search API Configuration
 # This is for the WebSearchTool to use the official Google API
