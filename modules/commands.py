@@ -130,6 +130,85 @@ def show_config_menu():
             break
 
 
+import requests
+
+def _select_model_from_openrouter():
+    """
+    Fetches models from OpenRouter, allows searching, pagination, and selection.
+
+    Returns:
+        str: The ID of the selected model, or None if no model is selected.
+    """
+    try:
+        response = requests.get("https://openrouter.ai/api/v1/models")
+        response.raise_for_status()
+        models = response.json()["data"]
+    except requests.RequestException as e:
+        console.print(f"[red]Error fetching models from OpenRouter: {e}[/red]")
+        return None
+
+    page = 0
+    page_size = 20
+    filtered_models = models
+
+    while True:
+        console.print("\n[bold cyan]Select a model from OpenRouter:[/bold cyan]")
+        
+        start_index = page * page_size
+        end_index = start_index + page_size
+        
+        paginated_models = filtered_models[start_index:end_index]
+        
+        table = Table(box=box.ROUNDED, border_style="cyan")
+        table.add_column("ID", style="cyan")
+        table.add_column("Name", style="white")
+        
+        for i, model in enumerate(paginated_models):
+            table.add_row(str(start_index + i + 1), model["id"])
+            
+        console.print(table)
+        
+        prompt_text = (
+            f"\n[bold cyan]Showing models {start_index + 1}-{min(end_index, len(filtered_models))} of {len(filtered_models)}. "
+            "Enter a model ID to select, /search <query>, /next, /back, or /exit:[/bold cyan]"
+        )
+        
+        user_input = Prompt.ask(prompt_text)
+
+        if user_input.lower().startswith("/search"):
+            query = user_input.split(maxsplit=1)[1] if len(user_input.split(maxsplit=1)) > 1 else ""
+            filtered_models = [m for m in models if query.lower() in m["id"].lower()]
+            page = 0
+            continue
+            
+        elif user_input.lower() == "/next":
+            if end_index < len(filtered_models):
+                page += 1
+            else:
+                console.print("[yellow]Already on the last page.[/yellow]")
+            continue
+
+        elif user_input.lower() == "/back":
+            if page > 0:
+                page -= 1
+            else:
+                console.print("[yellow]Already on the first page.[/yellow]")
+            continue
+            
+        elif user_input.lower() == "/exit":
+            return None
+            
+        else:
+            try:
+                model_index = int(user_input) - 1
+                if 0 <= model_index < len(filtered_models):
+                    return filtered_models[model_index]["id"]
+                else:
+                    console.print("[red]Invalid model ID.[/red]")
+            except ValueError:
+                console.print("[red]Invalid input. Please enter a number or a command.[/red]")
+
+
 def show_agents_menu():
     """
     Display and handle the agent management menu.
@@ -169,17 +248,24 @@ def show_agents_menu():
             api_key = Prompt.ask(f"[bold cyan]Enter the OpenRouter API key for {agent_name}[/bold cyan] (leave blank to use default)")
             site_url = Prompt.ask(f"[bold cyan]Enter the site URL for {agent_name}[/bold cyan] (optional)")
             site_name = Prompt.ask(f"[bold cyan]Enter the site name for {agent_name}[/bold cyan] (optional)")
-            agent_details = {
-                "name": agent_name, 
-                "description": agent_desc,
-                "api_key": api_key,
-                "site_url": site_url,
-                "site_name": site_name
-            }
-            if agent_manager.create_agent(agent_name, agent_details):
-                console.print(f"\n[green]✓ Agent '{agent_name}' created successfully.[/green]")
+            
+            selected_model = _select_model_from_openrouter()
+            
+            if selected_model:
+                agent_details = {
+                    "name": agent_name, 
+                    "description": agent_desc,
+                    "api_key": api_key,
+                    "site_url": site_url,
+                    "site_name": site_name,
+                    "model": selected_model
+                }
+                if agent_manager.create_agent(agent_name, agent_details):
+                    console.print(f"\n[green]✓ Agent '{agent_name}' created successfully.[/green]")
+                else:
+                    console.print(f"\n[red]Error: Agent '{agent_name}' already exists.[/red]")
             else:
-                console.print(f"\n[red]Error: Agent '{agent_name}' already exists.[/red]")
+                console.print(f"\n[red]Agent creation cancelled.[/red]")
 
         elif choice == "3":
             agent_name = Prompt.ask("[bold cyan]Enter the name of the agent to modify[/bold cyan]")
@@ -190,19 +276,29 @@ def show_agents_menu():
                 new_api_key = Prompt.ask(f"[bold cyan]Enter the new OpenRouter API key for {agent_name}[/bold cyan]", default=agent_details.get("api_key"))
                 new_site_url = Prompt.ask(f"[bold cyan]Enter the new site URL for {agent_name}[/bold cyan]", default=agent_details.get("site_url"))
                 new_site_name = Prompt.ask(f"[bold cyan]Enter the new site name for {agent_name}[/bold cyan]", default=agent_details.get("site_name"))
-
-                new_details = {
-                    "name": agent_name,
-                    "description": new_desc,
-                    "api_key": new_api_key,
-                    "site_url": new_site_url,
-                    "site_name": new_site_name
-                }
                 
-                if agent_manager.modify_agent(agent_name, new_details):
-                    console.print(f"\n[green]✓ Agent '{agent_name}' modified successfully.[/green]")
+                console.print(f"[bold cyan]Current model: {agent_details.get('model', 'Not set')}[/bold cyan]")
+                if Confirm.ask("[bold cyan]Do you want to change the model?[/bold cyan]"):
+                    selected_model = _select_model_from_openrouter()
                 else:
-                    console.print(f"\n[red]Error: Could not modify agent '{agent_name}'.[/red]")
+                    selected_model = agent_details.get("model")
+
+                if selected_model:
+                    new_details = {
+                        "name": agent_name,
+                        "description": new_desc,
+                        "api_key": new_api_key,
+                        "site_url": new_site_url,
+                        "site_name": new_site_name,
+                        "model": selected_model
+                    }
+                    
+                    if agent_manager.modify_agent(agent_name, new_details):
+                        console.print(f"\n[green]✓ Agent '{agent_name}' modified successfully.[/green]")
+                    else:
+                        console.print(f"\n[red]Error: Could not modify agent '{agent_name}'.[/red]")
+                else:
+                    console.print(f"\n[red]Agent modification cancelled.[/red]")
             else:
                 console.print(f"\n[red]Error: Agent '{agent_name}' not found.[/red]")
 
