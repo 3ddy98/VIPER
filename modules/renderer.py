@@ -64,8 +64,10 @@ def display_onboarding():
   /list                 List all conversations
   /search <query>       Search conversations
   /delete <id>          Delete a conversation
+  /compress             Manually compress conversation context
   /config               Open configuration menu
   /tools                List all available tools and their descriptions
+  /agents               Manage AI agents
   /exit                 Exit the application
 """
     

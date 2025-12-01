@@ -341,6 +341,10 @@ def handle_command(
     - /list: List all conversations
     - /search <query>: Search conversations
     - /delete <id>: Delete a conversation
+    - /compress: Manually compress current conversation context
+    - /config: Open configuration menu
+    - /tools: List available tools
+    - /agents: Manage AI agents
     - /exit: Exit the application
     
     Args:
@@ -364,6 +368,7 @@ def handle_command(
         console.print("  [cyan]/list[/cyan]              - List all conversations")
         console.print("  [cyan]/search <query>[/cyan]    - Search conversations")
         console.print("  [cyan]/delete <id>[/cyan]       - Delete a conversation")
+        console.print("  [cyan]/compress[/cyan]          - Manually compress conversation context")
         console.print("  [cyan]/config[/cyan]            - Open configuration menu")
         console.print("  [cyan]/tools[/cyan]             - List all available tools and their descriptions")
         console.print("  [cyan]/agents[/cyan]            - Open agent management menu")
@@ -477,11 +482,50 @@ def handle_command(
         
         return False, current_conv_id
     
+    # Compress command - manually trigger context compression
+    elif cmd == "compress":
+        if not current_conv_id:
+            console.print("\n[yellow]No active conversation to compress.[/yellow]\n")
+            return False, current_conv_id
+
+        conversation = manager.get_conversation(current_conv_id)
+        if not conversation:
+            console.print("\n[red]Error: Could not retrieve conversation.[/red]\n")
+            return False, current_conv_id
+
+        # Get token count before compression
+        from modules.token_manager import TokenManager
+        token_manager = TokenManager(model_name=CLIENT_CONFIG["model"])
+        before_tokens = token_manager.get_conversation_token_count(conversation["messages"])
+
+        console.print(f"\n[cyan]Current context: {before_tokens} tokens[/cyan]")
+
+        if not Confirm.ask("\n[yellow]Force context compression?[/yellow]", default=True):
+            console.print("[dim]Compression cancelled.[/dim]\n")
+            return False, current_conv_id
+
+        # Force compression by calling context manager
+        compressed_messages = manager.context_manager._compress_context(conversation["messages"])
+
+        # Update the conversation with compressed context
+        manager.conversations[current_conv_id]["messages"] = compressed_messages
+
+        # Get token count after compression
+        after_tokens = token_manager.get_conversation_token_count(compressed_messages)
+        saved_tokens = before_tokens - after_tokens
+
+        console.print(f"[green]✓ Context compressed successfully![/green]")
+        console.print(f"[dim]  Before: {before_tokens} tokens[/dim]")
+        console.print(f"[dim]  After: {after_tokens} tokens[/dim]")
+        console.print(f"[dim]  Saved: {saved_tokens} tokens ({saved_tokens * 100 // before_tokens}%)[/dim]\n")
+
+        return False, current_conv_id
+
     # Exit/Quit command - terminate the application
     elif cmd == "exit" or cmd == "quit":
         console.print("\n[cyan]Goodbye! 👋[/cyan]\n")
         return True, current_conv_id
-    
+
     # Unknown command - show error and hint
     else:
         console.print(f"\n[red]Unknown command: /{cmd}[/red]")

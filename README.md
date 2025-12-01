@@ -140,6 +140,7 @@ VIPER uses a slash command system for navigation and control:
 - `/list`: List all conversations.
 - `/search <query>`: Search conversations.
 - `/delete <id>`: Delete a conversation.
+- `/compress`: Manually compress conversation context to reduce token usage.
 - `/config`: Open the configuration menu to manage settings.
 - `/tools`: List all available tools and their descriptions.
 - `/agents`: Create, list, modify, and delete specialized AI agents.
