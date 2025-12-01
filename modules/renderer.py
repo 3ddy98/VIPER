@@ -246,34 +246,42 @@ def show_conversations_table(conversations: List[Dict], title: str = "Conversati
 def render_plan(plan: dict):
     """
     Render an execution plan with professional styling.
-    
+
     Displays a multi-step plan with:
-    - Plan name and description
+    - Plan name
     - Sequential step visualization
     - Tool details for each step
-    
+
     Args:
-        plan: Plan dictionary with name, description, and steps
+        plan: Plan dictionary with name and steps
+              Format: {
+                  "name": "Plan Name",
+                  "steps": [
+                      {
+                          "step_number": 1,
+                          "description": "Step description",
+                          "tool": "TOOL_NAME__method",
+                          "arguments": "{\"param\": \"value\"}"
+                      }
+                  ]
+              }
     """
     # Create plan header
     console.print("\n" + "─" * 80)
     console.print(f"[bold cyan]EXECUTION PLAN[/bold cyan]")
     console.print("─" * 80)
-    
-    # Display plan name and description
+
+    # Display plan name
     plan_name = plan.get("name", "Unnamed Plan")
-    plan_desc = plan.get("description", "No description provided")
-    
-    console.print(f"\n[bold white]Plan:[/bold white] {plan_name}")
-    console.print(f"[dim]{plan_desc}[/dim]\n")
-    
+    console.print(f"\n[bold white]Plan:[/bold white] {plan_name}\n")
+
     # Get steps
     steps = plan.get("steps", [])
-    
+
     if not steps:
         console.print("[yellow]No steps defined in plan[/yellow]\n")
         return
-    
+
     # Display steps in a professional table
     table = Table(
         box=box.HEAVY_HEAD,
@@ -281,33 +289,33 @@ def render_plan(plan: dict):
         header_style="bold cyan",
         show_lines=True
     )
-    
+
     table.add_column("Step", style="cyan", width=4, justify="center")
-    table.add_column("Operation", style="white", width=25)
-    table.add_column("Description", style="dim white", width=35)
-    table.add_column("Tool", style="green", width=14)
-    
+    table.add_column("Description", style="white", width=50)
+    table.add_column("Tool", style="green", width=20)
+
     # Add each step to the table
-    for idx, step in enumerate(steps, 1):
-        step_name = step.get("name", f"Step {idx}")
-        step_desc = step.get("description", "")
-        
-        # Extract tool information
-        tool_info = step.get("tool", {})
-        tool_name = tool_info.get("tool_name", "N/A")
-        method = tool_info.get("method", "N/A")
-        tool_display = f"{tool_name}.{method}" if tool_name != "N/A" else "N/A"
-        
+    for step in steps:
+        step_num = step.get("step_number", "?")
+        step_desc = step.get("description", "No description")
+
+        # Extract tool information from string format "TOOL_NAME__method"
+        tool_str = step.get("tool", "")
+        if "__" in tool_str:
+            tool_name, method = tool_str.split("__", 1)
+            tool_display = f"{tool_name}.{method}"
+        else:
+            tool_display = tool_str or "N/A"
+
         # Add row to table
         table.add_row(
-            str(idx),
-            step_name,
+            str(step_num),
             step_desc,
             tool_display
         )
-    
+
     console.print(table)
-    
+
     # Display total steps count
     console.print(f"\n[dim]Total Steps: {len(steps)}[/dim]")
     console.print("─" * 80 + "\n")
@@ -337,7 +345,7 @@ def render_plan_step_result(step_number: int, step_name: str, success: bool, res
 def render_plan_summary(plan_name: str, total_steps: int, successful_steps: int, results: list):
     """
     Render a summary of plan execution.
-    
+
     Args:
         plan_name: Name of the plan
         total_steps: Total number of steps
@@ -347,10 +355,10 @@ def render_plan_summary(plan_name: str, total_steps: int, successful_steps: int,
     console.print("\n" + "─" * 80)
     console.print("[bold cyan]PLAN EXECUTION SUMMARY[/bold cyan]")
     console.print("─" * 80 + "\n")
-    
+
     console.print(f"[bold white]Plan:[/bold white] {plan_name}")
     console.print(f"[white]Steps Completed:[/white] {successful_steps}/{total_steps}")
-    
+
     # Determine overall status
     if successful_steps == total_steps:
         status = "[green]SUCCESS[/green]"
@@ -358,9 +366,112 @@ def render_plan_summary(plan_name: str, total_steps: int, successful_steps: int,
         status = "[red]FAILED[/red]"
     else:
         status = "[yellow]PARTIAL[/yellow]"
-    
+
     console.print(f"[white]Status:[/white] {status}\n")
-    
+
+    console.print("─" * 80 + "\n")
+
+
+def render_plan_update(old_plan: dict, new_plan: dict):
+    """
+    Render a comparison between the original plan and an updated plan.
+
+    Displays:
+    - Plan name changes
+    - Side-by-side comparison of steps
+    - Added/removed/modified steps
+
+    Args:
+        old_plan: Original plan dictionary
+        new_plan: Updated plan dictionary
+    """
+    console.print("\n" + "─" * 80)
+    console.print("[bold yellow]PLAN UPDATE[/bold yellow]")
+    console.print("─" * 80 + "\n")
+
+    # Show plan name change if different
+    old_name = old_plan.get("name", "Unnamed Plan")
+    new_name = new_plan.get("name", "Unnamed Plan")
+
+    if old_name != new_name:
+        console.print(f"[dim]Plan name:[/dim]")
+        console.print(f"  [red]- {old_name}[/red]")
+        console.print(f"  [green]+ {new_name}[/green]\n")
+    else:
+        console.print(f"[bold white]Plan:[/bold white] {new_name}\n")
+
+    # Get steps
+    old_steps = old_plan.get("steps", [])
+    new_steps = new_plan.get("steps", [])
+
+    # Create comparison table
+    table = Table(
+        box=box.HEAVY_HEAD,
+        border_style="yellow",
+        header_style="bold yellow",
+        show_lines=True
+    )
+
+    table.add_column("Step", style="cyan", width=4, justify="center")
+    table.add_column("Status", style="white", width=8, justify="center")
+    table.add_column("Description", style="white", width=50)
+    table.add_column("Tool", style="green", width=20)
+
+    # Build step mapping for comparison
+    max_steps = max(len(old_steps), len(new_steps))
+
+    for i in range(max_steps):
+        old_step = old_steps[i] if i < len(old_steps) else None
+        new_step = new_steps[i] if i < len(new_steps) else None
+
+        if old_step and new_step:
+            # Both exist - check if modified
+            old_desc = old_step.get("description", "")
+            new_desc = new_step.get("description", "")
+            old_tool = old_step.get("tool", "")
+            new_tool = new_step.get("tool", "")
+
+            if old_desc == new_desc and old_tool == new_tool:
+                # Unchanged
+                status = "="
+                status_style = "dim white"
+                desc_text = new_desc
+                tool_text = new_tool.replace("__", ".")
+            else:
+                # Modified
+                status = "~"
+                status_style = "yellow"
+                desc_text = f"{old_desc}\n→ {new_desc}"
+                old_tool_display = old_tool.replace("__", ".")
+                new_tool_display = new_tool.replace("__", ".")
+                tool_text = f"{old_tool_display}\n→ {new_tool_display}"
+        elif new_step:
+            # Added step
+            status = "+"
+            status_style = "green"
+            desc_text = new_step.get("description", "")
+            tool_text = new_step.get("tool", "").replace("__", ".")
+        elif old_step:
+            # Removed step
+            status = "-"
+            status_style = "red"
+            desc_text = old_step.get("description", "")
+            tool_text = old_step.get("tool", "").replace("__", ".")
+        else:
+            continue
+
+        table.add_row(
+            str(i + 1),
+            Text(status, style=status_style),
+            desc_text,
+            tool_text
+        )
+
+    console.print(table)
+
+    # Summary of changes
+    console.print(f"\n[dim]Legend: [green]+[/green] Added  [yellow]~[/yellow] Modified  [red]-[/red] Removed  [dim]=[/dim] Unchanged[/dim]")
+    console.print(f"[dim]Total steps: {len(old_steps)} → {len(new_steps)}[/dim]")
     console.print("─" * 80 + "\n")
 
 def render_status_bar(directory: str, token_info: str, date_time_info: str):

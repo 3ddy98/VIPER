@@ -25,6 +25,7 @@ VIPER (Viper Is a Python-based Extensible repl) is a highly modular and extensib
 - **Conversation Management:** Start new conversations, save and continue existing ones, list all conversations, search by title or content, and delete conversations.
 - **Rich Terminal UI:** Styled menus, tables, and panels, streaming AI responses with live markdown rendering, syntax highlighting for JSON, and interactive prompts.
 - **Advanced AI & Tool Integration:** Dynamically loads and integrates custom tools from the `tools/` directory. The AI can create and execute multi-step plans using the available tools.
+- **Adaptive Plan Execution:** AI agents can reevaluate and modify plans after each step based on execution results. Supports automatic error recovery, early completion, and dynamic plan updates with full transparency and user control.
 - **Specialized Agents:** Create and manage specialized AI agents with different models and capabilities via the `/agents` command. Agents can delegate tasks to each other and automatically use tools when supported.
 - **OpenRouter Integration:** Native support for OpenRouter's tool calling format, enabling agents to use any OpenRouter-compatible model with automatic tool support detection.
 - **Secure Configuration:** API keys are stored exclusively in `.env` file and never committed to version control. Configuration files are safe to share.
@@ -170,6 +171,53 @@ Please use the Coder agent to help me write a Python function for sorting a list
 ```
 
 Agents can also invoke other agents, enabling complex multi-agent workflows.
+
+---
+
+## Adaptive Plan Execution
+
+VIPER features an advanced **adaptive plan execution** system that allows AI agents to intelligently modify their plans in real-time based on execution results.
+
+### How It Works
+
+1. **Initial Plan Creation**: The AI creates a multi-step plan to accomplish a task
+2. **Step-by-Step Execution**: Each step is executed sequentially
+3. **Reevaluation**: After each step (success or failure), the AI analyzes the results
+4. **Decision Making**: The AI can:
+   - **CONTINUE** - Proceed with the existing plan
+   - **UPDATE_PLAN** - Modify the plan (add/remove/change steps)
+   - **COMPLETE** - Mark plan as finished early if goals are achieved
+   - **ABORT** - Stop execution due to unrecoverable errors
+
+### Benefits
+
+- **Error Recovery**: Automatically handles failures by creating recovery plans
+- **Adaptive Planning**: Plans evolve based on actual results rather than assumptions
+- **Efficiency**: Completes early when goals are achieved without running unnecessary steps
+- **Transparency**: Visual diffs show exactly what changes the AI proposes
+- **User Control**: All plan updates require user confirmation before execution
+
+### Example: Automatic Recovery
+
+```
+Initial Plan: Load and process data
+Step 1: Read data.csv → FAILED (file not found)
+
+AI proposes recovery plan:
+Step 1: Create sample data.csv
+Step 2: Read data.csv
+Step 3: Process data
+
+User confirms → Execution continues with recovery plan
+```
+
+### Visual Feedback
+
+When plans are updated, VIPER displays a color-coded diff showing:
+- ✓ Added steps (green)
+- ✗ Removed steps (red)
+- ~ Modified steps (yellow)
+- = Unchanged steps (gray)
 
 ---
 

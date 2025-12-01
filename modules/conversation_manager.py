@@ -363,46 +363,289 @@ class ConversationManager:
 
         return self.tool_manager.execute_tool_method(tool_name, method, **params)
     
-    def _execute_plan(self, plan: Dict) -> Dict:
-        """Execute a multi-step plan."""
+    def _execute_plan(self, plan: Dict, conv_id: str, allow_reevaluation: bool = True) -> Dict:
+        """
+        Execute a multi-step plan with optional reevaluation after each step.
+
+        Plan structure:
+        {
+            "name": "Plan Name",
+            "steps": [
+                {
+                    "step_number": 1,
+                    "description": "Step description",
+                    "tool": "TOOL_NAME__method",
+                    "arguments": "{\"param\": \"value\"}"
+                }
+            ]
+        }
+
+        Args:
+            plan: The plan dictionary
+            conv_id: Conversation ID for agent reevaluation
+            allow_reevaluation: If True, agent can reevaluate plan after each step
+
+        Returns:
+            Dict with execution results
+        """
         plan_name = plan.get("name", "Unnamed Plan")
         steps = plan.get("steps", [])
-        
+
         render_plan(plan)
         if not Confirm.ask("[yellow]Execute this plan?[/yellow]", default=True):
             return {"success": False, "error": "Plan execution cancelled by user"}
-        
+
         console.print("\n[bold cyan]EXECUTING PLAN[/bold cyan]\n")
         results = []
         successful_steps = 0
-        
-        for idx, step in enumerate(steps, 1):
-            result = self._execute_tool_with_confirmation(step.get("tool", {}))
-            render_plan_step_result(idx, step.get("name"), result.get("success", False), result)
-            results.append({"step": idx, "name": step.get("name"), **result})
-            
+        current_plan = plan
+        step_index = 0
+
+        while step_index < len(steps):
+            step = steps[step_index]
+            step_num = step.get("step_number", step_index + 1)
+            description = step.get("description", "Unknown step")
+            tool_full_name = step.get("tool", "")
+            arguments_str = step.get("arguments", "{}")
+
+            # Parse tool name: "TOOL_NAME__method" -> tool_name, method
+            if "__" in tool_full_name:
+                tool_name, method = tool_full_name.split("__", 1)
+            else:
+                console.print(f"[red]Invalid tool format: {tool_full_name}[/red]")
+                results.append({"step": step_num, "description": description, "success": False, "error": "Invalid tool format"})
+                break
+
+            # Parse arguments JSON
+            try:
+                params = json.loads(arguments_str)
+            except json.JSONDecodeError:
+                console.print(f"[red]Invalid JSON arguments for step {step_num}[/red]")
+                results.append({"step": step_num, "description": description, "success": False, "error": "Invalid JSON arguments"})
+                break
+
+            # Execute the tool
+            console.print(f"\n[cyan]Step {step_num}:[/cyan] {description}")
+            result = self.tool_manager.execute_tool_method(tool_name, method, **params)
+            result["description"] = description
+            result["step_number"] = step_num
+
+            render_plan_step_result(step_num, description, result.get("success", False), result)
+            results.append({"step": step_num, **result})
+
             if result.get("success", False):
                 successful_steps += 1
+
+                # Allow agent to reevaluate plan after successful step
+                if allow_reevaluation and step_index < len(steps) - 1:
+                    reevaluation_result = self._reevaluate_plan(
+                        conv_id, current_plan, step_num, result, results, steps[step_index + 1:]
+                    )
+
+                    if reevaluation_result.get("action") == "continue":
+                        # Continue with existing plan
+                        step_index += 1
+                    elif reevaluation_result.get("action") == "update_plan":
+                        # Agent provided updated plan
+                        updated_plan = reevaluation_result.get("plan")
+                        if updated_plan:
+                            console.print("\n[yellow]⚠️  Agent updated the plan based on step results[/yellow]\n")
+                            from modules.renderer import render_plan_update
+                            render_plan_update(current_plan, updated_plan)
+
+                            # Ask user to confirm updated plan
+                            if Confirm.ask("[yellow]Continue with updated plan?[/yellow]", default=True):
+                                current_plan = updated_plan
+                                steps = updated_plan.get("steps", [])
+                                plan_name = updated_plan.get("name", plan_name)
+                                step_index += 1
+                            else:
+                                console.print("[yellow]Plan execution cancelled by user[/yellow]")
+                                break
+                        else:
+                            step_index += 1
+                    elif reevaluation_result.get("action") == "complete":
+                        # Agent determined plan is complete
+                        console.print("\n[green]✓ Agent determined plan goals achieved[/green]\n")
+                        break
+                    elif reevaluation_result.get("action") == "abort":
+                        # Agent determined plan should be aborted
+                        console.print("\n[red]✗ Agent aborted plan execution[/red]")
+                        reason = reevaluation_result.get("reason", "Unknown reason")
+                        console.print(f"[dim]Reason: {reason}[/dim]\n")
+                        break
+                    else:
+                        step_index += 1
+                else:
+                    step_index += 1
             else:
-                console.print(f"\n[red]Plan execution stopped at step {idx} due to failure.[/red]\n")
-                break
-        
+                # Step failed - allow agent to reevaluate
+                if allow_reevaluation:
+                    console.print(f"\n[yellow]Step {step_num} failed. Asking agent to reevaluate...[/yellow]\n")
+                    reevaluation_result = self._reevaluate_plan(
+                        conv_id, current_plan, step_num, result, results, steps[step_index:]
+                    )
+
+                    if reevaluation_result.get("action") == "update_plan":
+                        # Agent provided recovery plan
+                        updated_plan = reevaluation_result.get("plan")
+                        if updated_plan:
+                            console.print("\n[yellow]⚠️  Agent proposed recovery plan[/yellow]\n")
+                            from modules.renderer import render_plan_update
+                            render_plan_update(current_plan, updated_plan)
+
+                            if Confirm.ask("[yellow]Execute recovery plan?[/yellow]", default=True):
+                                current_plan = updated_plan
+                                steps = updated_plan.get("steps", [])
+                                plan_name = updated_plan.get("name", plan_name)
+                                step_index = 0  # Restart with recovery plan
+                                results = []  # Reset results
+                                successful_steps = 0
+                            else:
+                                console.print("[yellow]Recovery cancelled, stopping execution[/yellow]")
+                                break
+                        else:
+                            break
+                    else:
+                        console.print(f"\n[red]Plan execution stopped at step {step_num} due to failure.[/red]\n")
+                        break
+                else:
+                    console.print(f"\n[red]Plan execution stopped at step {step_num} due to failure.[/red]\n")
+                    break
+
         render_plan_summary(plan_name, len(steps), successful_steps, results)
         return {
             "success": successful_steps == len(steps), "plan_name": plan_name,
             "total_steps": len(steps), "successful_steps": successful_steps, "results": results
         }
+
+    def _reevaluate_plan(self, conv_id: str, current_plan: Dict, last_step_num: int,
+                         last_result: Dict, all_results: List[Dict], remaining_steps: List[Dict]) -> Dict:
+        """
+        Ask the agent to reevaluate the plan based on step execution results.
+
+        Args:
+            conv_id: Conversation ID
+            current_plan: The current plan being executed
+            last_step_num: The step number that just completed
+            last_result: Result of the last step execution
+            all_results: All step results so far
+            remaining_steps: Steps that haven't been executed yet
+
+        Returns:
+            Dict with:
+            - action: "continue" | "update_plan" | "complete" | "abort"
+            - plan: Updated plan (if action is "update_plan")
+            - reason: Reason for action
+        """
+        # Prepare feedback for the agent
+        feedback_msg = f"""PLAN REEVALUATION REQUEST
+
+Current Plan: {current_plan.get('name', 'Unnamed Plan')}
+
+Step {last_step_num} just completed:
+- Description: {last_result.get('description', 'Unknown')}
+- Status: {"SUCCESS" if last_result.get('success') else "FAILED"}
+- Result: {json.dumps(last_result.get('result', {}), indent=2)}
+
+All executed steps so far:
+{json.dumps(all_results, indent=2)}
+
+Remaining steps in current plan:
+{json.dumps(remaining_steps, indent=2)}
+
+Based on the step results, please decide:
+1. CONTINUE - Continue with the existing plan as-is
+2. UPDATE_PLAN - Provide an updated/modified plan
+3. COMPLETE - The plan goals are already achieved, no more steps needed
+4. ABORT - The plan should be aborted (e.g., insurmountable error)
+
+Respond with your decision and reasoning using this format:
+
+THOUGHT: <analyze the step results and determine next action>
+DECISION: <CONTINUE | UPDATE_PLAN | COMPLETE | ABORT>
+REASON: <brief explanation of your decision>
+
+If DECISION is UPDATE_PLAN, also provide:
+PLAN: <updated plan name>
+STEP: <step description>
+TOOL: <TOOL_NAME>__<method_name>
+ARGS: <valid JSON object>
+... (additional steps as needed)
+"""
+
+        # Add feedback to conversation
+        self.add_message(conv_id, "system", feedback_msg)
+
+        # Get agent's response
+        console.print("\n[dim]Requesting plan reevaluation from agent...[/dim]")
+
+        # Get response without streaming UI
+        conversation = self.get_conversation(conv_id)
+        managed_messages = self.context_manager.manage(conversation["messages"])
+
+        response = self.client.chat.completions.create(
+            model=CLIENT_CONFIG["model"],
+            messages=managed_messages,
+            stream=True
+        )
+
+        full_response = ""
+        with console.status("[bold green]Agent thinking...") as status:
+            for chunk in response:
+                if chunk.choices[0].delta.content:
+                    content = chunk.choices[0].delta.content
+                    full_response += content
+
+        # Parse the agent's decision
+        decision_match = re.search(r'DECISION:\s*(CONTINUE|UPDATE_PLAN|COMPLETE|ABORT)', full_response, re.IGNORECASE)
+        reason_match = re.search(r'REASON:\s*([^\n]+)', full_response, re.IGNORECASE)
+
+        decision = decision_match.group(1).upper() if decision_match else "CONTINUE"
+        reason = reason_match.group(1).strip() if reason_match else "No reason provided"
+
+        console.print(f"[dim]Agent decision: {decision}[/dim]")
+        console.print(f"[dim]Reason: {reason}[/dim]")
+
+        result = {
+            "action": decision.lower(),
+            "reason": reason
+        }
+
+        # If agent provided an updated plan, parse it
+        if decision == "UPDATE_PLAN":
+            preprocessed = preprocess_custom_model_response(full_response)
+            try:
+                parsed = json.loads(preprocessed)
+                if "plan" in parsed:
+                    result["plan"] = parsed["plan"]
+            except json.JSONDecodeError:
+                console.print("[yellow]Failed to parse updated plan from agent[/yellow]")
+
+        # Add agent's response to conversation
+        self.add_message(conv_id, "assistant", full_response)
+
+        return result
     
-    def stream_response(self, conv_id: str, user_message: str) -> str:
+    def stream_response(self, conv_id: str, user_message: str, retry_count: int = 0, max_retries: int = 3) -> str:
         """
         Send a message and stream the AI response, managing context.
+
+        Args:
+            conv_id: Conversation ID
+            user_message: User's message
+            retry_count: Current retry attempt (for tool failures)
+            max_retries: Maximum number of retries allowed for tool failures
+
+        Returns:
+            The assistant's response
         """
         conversation = self.get_conversation(conv_id)
         if not conversation:
             return ""
-        
+
         self.add_message(conv_id, "user", user_message)
-        
+
         # Manage context before sending to AI
         managed_messages = self.context_manager.manage(conversation["messages"])
         self.conversations[conv_id]["messages"] = managed_messages
@@ -412,12 +655,12 @@ class ConversationManager:
             messages=managed_messages,
             stream=True
         )
-        
+
         full_response = ""
         console.print("\n[bold cyan]Assistant:[/bold cyan]")
-        
+
         display_method = Live if UI_CONFIG["show_streaming"] else lambda: console.status("[bold green]Thinking...")
-        
+
         with display_method() as live:
             for chunk in response:
                 if chunk.choices[0].delta.content:
@@ -436,8 +679,27 @@ class ConversationManager:
                 # Parse preprocessed response as JSON
                 json_match = json.loads(preprocessed_response)
 
+                # Check for PLAN format (multi-step execution)
+                if "plan" in json_match and json_match["plan"]:
+                    plan = json_match["plan"]
+
+                    # Execute the plan with reevaluation enabled
+                    plan_result = self._execute_plan(plan, conv_id, allow_reevaluation=True)
+
+                    if plan_result.get("success"):
+                        console.print("[green]Plan execution successful. Getting final response...[/green]\n")
+                        # Add plan results to conversation
+                        results_msg = f"Plan execution results:\n{json.dumps(plan_result, indent=2)}"
+                        self.add_message(conv_id, "system", results_msg)
+                        # Get final response from agent
+                        return self.stream_response(conv_id, "Please provide your response based on the plan execution results.", retry_count=0)
+                    else:
+                        # Plan execution failed
+                        console.print(f"[red]Plan execution failed: {plan_result.get('error', 'Unknown error')}[/red]\n")
+                        # Fall through to render the original response
+
                 # Check for OpenRouter format tool_calls
-                if "tool_calls" in json_match and json_match["tool_calls"]:
+                elif "tool_calls" in json_match and json_match["tool_calls"]:
                     tool_calls = json_match["tool_calls"]
 
                     # Execute all tool calls
@@ -468,11 +730,38 @@ class ConversationManager:
                         self.add_message(conv_id, "system", results_msg)
                         # Recursively call stream_response to get the final response
                         # The recursive call will handle its own rendering
-                        return self.stream_response(conv_id, "Please provide your response based on the tool execution results.")
+                        return self.stream_response(conv_id, "Please provide your response based on the tool execution results.", retry_count=0)
                     else:
+                        # Tool execution failed - check if we can retry
                         failed = [r for r in all_results if not r.get("success")]
-                        console.print(f"[red]Some tools failed: {json.dumps(failed, indent=2)}[/red]\n")
-                        # Fall through to render the original response even if tools failed
+                        console.print(f"[red]Tool execution failed: {json.dumps(failed, indent=2)}[/red]\n")
+
+                        if retry_count < max_retries:
+                            console.print(f"[yellow]Retry {retry_count + 1}/{max_retries}: Asking agent to reevaluate...[/yellow]\n")
+
+                            # Build error message for the agent
+                            error_details = []
+                            for i, result in enumerate(all_results):
+                                if not result.get("success"):
+                                    tool_name = result.get("function_called", f"Tool {i+1}")
+                                    error_msg = result.get("error", "Unknown error")
+                                    error_details.append(f"- {tool_name}: {error_msg}")
+
+                            retry_message = (
+                                f"TOOL EXECUTION FAILED:\n" +
+                                "\n".join(error_details) +
+                                f"\n\nPlease reevaluate your approach and try again with corrected parameters or a different method."
+                            )
+
+                            # Add error to conversation and retry
+                            self.add_message(conv_id, "system", retry_message)
+                            return self.stream_response(conv_id, "Retry with corrected approach", retry_count=retry_count + 1, max_retries=max_retries)
+                        else:
+                            console.print(f"[red]Max retries ({max_retries}) reached. Tool execution permanently failed.[/red]\n")
+                            # Add final failure to conversation
+                            failure_msg = f"Tool execution failed after {max_retries} retries:\n{json.dumps(failed, indent=2)}"
+                            self.add_message(conv_id, "system", failure_msg)
+                            # Fall through to render the original response
 
             except (json.JSONDecodeError, AttributeError):
                 # Not a valid tool call, treat as regular message
