@@ -53,12 +53,20 @@ class ContextManager:
             The (potentially compressed) list of messages.
         """
         token_count = self.token_manager.get_conversation_token_count(messages)
-        
+
         # Check if the current token count is over the threshold
         if token_count > (self.token_window * self.compression_threshold):
             console.print(f"\n[yellow]Context is large ({token_count} tokens). Compressing...[/yellow]")
-            return self._compress_context(messages)
-        
+            compressed = self._compress_context(messages)
+
+            # Verify compressed context is within limits
+            compressed_tokens = self.token_manager.get_conversation_token_count(compressed)
+            if compressed_tokens > (self.token_window * 0.95):  # Leave 5% buffer for response
+                console.print(f"[yellow]⚠️  Compressed context still large ({compressed_tokens} tokens). Applying aggressive compression...[/yellow]")
+                return self._aggressive_compress(compressed)
+
+            return compressed
+
         # If not over threshold, return messages as is
         return messages
 
@@ -101,16 +109,26 @@ class ContextManager:
             f"CONVERSATION:\n{json.dumps(messages_to_summarize, indent=2)}"
         )
 
+        # CRITICAL: Check if the summarization request itself fits in the token window
+        summarization_messages = [{"role": "user", "content": summary_prompt_text}]
+        summarization_tokens = self.token_manager.get_conversation_token_count(summarization_messages)
+
+        # If the summarization request is too large, we need to chunk it
+        if summarization_tokens > (self.token_window * 0.9):  # Leave 10% for response
+            console.print(f"[yellow]⚠️  Summarization request too large ({summarization_tokens} tokens). Chunking...[/yellow]")
+            # Use aggressive compression instead
+            return self._aggressive_compress(messages)
+
         try:
             # 5. Call the AI to perform the summarization
             with console.status("[dim]Summarizing older context to save tokens...[/dim]"):
                 response = self.client.chat.completions.create(
                     model=self.model,
-                    messages=[{"role": "user", "content": summary_prompt_text}],
+                    messages=summarization_messages,
                     temperature=0.2  # Lower temperature for more factual summary
                 )
                 summary = response.choices[0].message.content
-        
+
         except Exception as e:
             console.print(f"[red]✗ Failed to summarize context: {e}[/red]")
             # Fallback: if summarization fails, simply truncate the oldest messages
@@ -127,5 +145,46 @@ class ContextManager:
         
         new_token_count = self.token_manager.get_conversation_token_count(new_messages)
         console.print(f"[green]✓ Context compressed. Tokens reduced to ~{new_token_count}.[/green]\n")
-        
+
         return new_messages
+
+    def _aggressive_compress(self, messages: List[Dict]) -> List[Dict]:
+        """
+        Aggressively compresses context when normal compression isn't sufficient.
+
+        This method:
+        1. Keeps only the system prompt
+        2. Keeps only the most recent N messages (fewer than normal)
+        3. Adds a brief summary note about older conversation
+
+        Args:
+            messages: The full list of message dictionaries.
+
+        Returns:
+            A heavily compressed list of messages.
+        """
+        # Keep even fewer recent messages for aggressive compression
+        aggressive_recent_keep = max(3, self.recent_messages_to_keep // 3)
+
+        if len(messages) <= aggressive_recent_keep + 1:
+            return messages
+
+        system_prompt = messages[0]
+        recent_messages = messages[-aggressive_recent_keep:]
+
+        # Add a simple note about truncated history
+        truncation_note = {
+            "role": "system",
+            "content": (
+                f"[Context heavily compressed due to token limits. "
+                f"Earlier conversation history ({len(messages) - aggressive_recent_keep - 1} messages) "
+                f"has been truncated. Only the most recent {aggressive_recent_keep} messages are preserved.]"
+            )
+        }
+
+        compressed = [system_prompt, truncation_note] + recent_messages
+
+        compressed_tokens = self.token_manager.get_conversation_token_count(compressed)
+        console.print(f"[yellow]✓ Aggressively compressed to {compressed_tokens} tokens (kept last {aggressive_recent_keep} messages)[/yellow]\n")
+
+        return compressed
