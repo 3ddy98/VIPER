@@ -55,6 +55,42 @@ file.<|end|><|start|>assistant<|channel|>commentary to=FILE_EXPLORER__read_file 
 
     print("\n✓ PASS: GPT-OSS commentary format parsed correctly")
 
+    # Test 1.5: Real output with "analysis to=" format
+    print("\n" + "=" * 70)
+    print("TEST 1.5: Real GPT-OSS output with analysis to=")
+    print("=" * 70)
+
+    analysis_output = """<|channel|>analysis<|message|>The user wants to navigate to folder and understand how the AP Django application is designed.
+Need to read files in that directory. Use FILE_EXPLORER__list_directory to list folder. Then read relevant files like models,
+views, serializers, urls. We'll need to fetch multiple files. Let's start by listing
+directory.<|end|><|start|>assistant<|channel|>analysis to=FILE_EXPLORER__list_directory <|constrain|>json<|message|>{
+  "path": "Parclo-API/Parclo-Master/apps/finance/ap",
+  "recursive": false,
+  "max_depth": 1
+}"""
+
+    print(f"\nInput (actual model output with 'analysis to='):")
+    print(analysis_output[:150] + "...")
+
+    result_analysis = preprocess_primary_agent_response(analysis_output)
+    print(f"\nParsed result:")
+    print(json.dumps(json.loads(result_analysis), indent=2))
+
+    parsed_analysis = json.loads(result_analysis)
+
+    # Verify structure
+    assert "tool_calls" in parsed_analysis, "Should have tool_calls field"
+    assert len(parsed_analysis["tool_calls"]) == 1, "Should have 1 tool call"
+
+    tool_call_analysis = parsed_analysis["tool_calls"][0]
+    assert tool_call_analysis["function"]["name"] == "FILE_EXPLORER__list_directory", "Tool name should match"
+
+    args_analysis = json.loads(tool_call_analysis["function"]["arguments"])
+    assert "path" in args_analysis, "Should have path argument"
+    assert args_analysis["path"] == "Parclo-API/Parclo-Master/apps/finance/ap", "Path should match"
+
+    print("\n✓ PASS: GPT-OSS 'analysis to=' format parsed correctly")
+
     # Test 2: Commentary format with multiple tools
     print("\n" + "=" * 70)
     print("TEST 2: Multiple commentary blocks")
@@ -117,13 +153,15 @@ commentary to=FILE_EXPLORER__read_file <|message|>{"file_path":"test.txt"}""",
     print("\n" + "=" * 70)
     print("SUMMARY")
     print("=" * 70)
-    print("\n✓ All GPT-OSS commentary format tests passed!")
+    print("\n✓ All GPT-OSS commentary/analysis format tests passed!")
     print("\nSupported formats:")
     print("✓ commentary to=TOOL_NAME <|constrain|>json<|message|>{...}")
-    print("✓ Multiple commentary blocks in single response")
+    print("✓ analysis to=TOOL_NAME <|constrain|>json<|message|>{...}")
+    print("✓ Multiple commentary/analysis blocks in single response")
     print("✓ Variations with/without tokens and whitespace")
     print("\nConversion:")
     print("  Input:  commentary to=FILE_EXPLORER__read_file {...}")
+    print("  Input:  analysis to=FILE_EXPLORER__list_directory {...}")
     print("  Output: TOOL: FILE_EXPLORER__read_file")
     print("          ARGS: {...}")
 

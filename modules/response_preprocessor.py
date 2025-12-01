@@ -56,10 +56,11 @@ def preprocess_primary_agent_response(response: str) -> str:
     if final_match:
         response = final_match.group(1)
 
-    # Step 1.5: Handle GPT-OSS "commentary to=TOOL_NAME" format
+    # Step 1.5: Handle GPT-OSS "commentary/analysis to=TOOL_NAME" format
     # Convert: commentary to=FILE_EXPLORER__read_file {...}
+    # Or: analysis to=FILE_EXPLORER__read_file {...}
     # To: TOOL: FILE_EXPLORER__read_file\nARGS: {...}
-    commentary_pattern = r'commentary\s+to=([A-Za-z0-9_]+)(?:\s*<\|constrain\|>\w+)?(?:\s*<\|message\|>)?\s*(\{[^}]*\})'
+    commentary_pattern = r'(?:commentary|analysis)\s+to=([A-Za-z0-9_]+)(?:\s*<\|constrain\|>\w+)?(?:\s*<\|message\|>)?\s*(\{[^}]*\})'
     commentary_matches = list(re.finditer(commentary_pattern, response, re.DOTALL | re.IGNORECASE))
 
     if commentary_matches:
@@ -69,9 +70,9 @@ def preprocess_primary_agent_response(response: str) -> str:
             tool_name = match.group(1)
             args_json = match.group(2)
 
-            # Extract THOUGHT if present before the commentary
+            # Extract THOUGHT if present before the commentary/analysis
             thought_before = converted_response[:match.start()]
-            thought_match = re.search(r'THOUGHT:\s*(.+?)(?=commentary|$)', thought_before, re.DOTALL | re.IGNORECASE)
+            thought_match = re.search(r'THOUGHT:\s*(.+?)(?=commentary|analysis|$)', thought_before, re.DOTALL | re.IGNORECASE)
             thought = thought_match.group(1).strip() if thought_match else ""
 
             # Build standard format
