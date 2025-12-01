@@ -56,29 +56,29 @@ def preprocess_primary_agent_response(response: str) -> str:
     if final_match:
         response = final_match.group(1)
 
-    # Step 1.5: Handle GPT-OSS "commentary/analysis to=TOOL_NAME" format
-    # Convert: commentary to=FILE_EXPLORER__read_file {...}
-    # Or: analysis to=FILE_EXPLORER__read_file {...}
+    # Step 1.5: Handle GPT-OSS "to=TOOL_NAME" format
+    # Matches any channel format: commentary to=, analysis to=, etc.
+    # Convert: <anything> to=FILE_EXPLORER__read_file {...}
     # To: TOOL: FILE_EXPLORER__read_file\nARGS: {...}
-    commentary_pattern = r'(?:commentary|analysis)\s+to=([A-Za-z0-9_]+)(?:\s*<\|constrain\|>\w+)?(?:\s*<\|message\|>)?\s*(\{[^}]*\})'
-    commentary_matches = list(re.finditer(commentary_pattern, response, re.DOTALL | re.IGNORECASE))
+    tool_call_pattern = r'\bto=([A-Za-z0-9_]+)(?:\s*<\|constrain\|>\w+)?(?:\s*<\|message\|>)?\s*(\{[^}]*\})'
+    tool_call_matches = list(re.finditer(tool_call_pattern, response, re.DOTALL | re.IGNORECASE))
 
-    if commentary_matches:
-        # Found GPT-OSS commentary format - convert to standard format
+    if tool_call_matches:
+        # Found GPT-OSS "to=" format - convert to standard format
         converted_response = response
-        for match in reversed(commentary_matches):  # Reverse to preserve positions
+        for match in reversed(tool_call_matches):  # Reverse to preserve positions
             tool_name = match.group(1)
             args_json = match.group(2)
 
-            # Extract THOUGHT if present before the commentary/analysis
+            # Extract THOUGHT if present before the tool call
             thought_before = converted_response[:match.start()]
-            thought_match = re.search(r'THOUGHT:\s*(.+?)(?=commentary|analysis|$)', thought_before, re.DOTALL | re.IGNORECASE)
+            thought_match = re.search(r'THOUGHT:\s*(.+?)(?=\bto=|$)', thought_before, re.DOTALL | re.IGNORECASE)
             thought = thought_match.group(1).strip() if thought_match else ""
 
             # Build standard format
             standard_format = f"THOUGHT: {thought}\nTOOL: {tool_name}\nARGS: {args_json}"
 
-            # Replace the commentary block
+            # Replace the "to=" block
             converted_response = converted_response[:match.start()] + standard_format + converted_response[match.end():]
 
         response = converted_response

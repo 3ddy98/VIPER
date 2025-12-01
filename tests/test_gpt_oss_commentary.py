@@ -150,18 +150,55 @@ commentary to=FILE_EXPLORER__read_file <|message|>{"file_path":"test.txt"}""",
             print(f"  ✗ FAILED: No tool calls found")
             print(f"  Result: {json.dumps(parsed, indent=2)}")
 
+    # Test 4: Any prefix before "to=" should work
+    print("\n" + "=" * 70)
+    print("TEST 4: Generic 'to=' pattern (any prefix)")
+    print("=" * 70)
+
+    generic_formats = [
+        {
+            "name": "Unknown channel type 'reflection to='",
+            "input": """THOUGHT: Thinking about this
+reflection to=FILE_EXPLORER__read_file <|message|>{"file_path":"test.txt"}""",
+            "expected": "FILE_EXPLORER__read_file"
+        },
+        {
+            "name": "Custom channel 'planning to='",
+            "input": """THOUGHT: Making a plan
+planning to=CODE_EXECUTION__run <|message|>{"code":"print('hello')"}""",
+            "expected": "CODE_EXECUTION__run"
+        }
+    ]
+
+    for test in generic_formats:
+        print(f"\n{test['name']}:")
+        result = preprocess_primary_agent_response(test['input'])
+        parsed = json.loads(result)
+
+        if "tool_calls" in parsed:
+            tool_name = parsed["tool_calls"][0]["function"]["name"]
+            assert tool_name == test["expected"], f"Expected {test['expected']}, got {tool_name}"
+            print(f"  ✓ Parsed as: {tool_name}")
+        else:
+            print(f"  ✗ FAILED: No tool calls found")
+
     print("\n" + "=" * 70)
     print("SUMMARY")
     print("=" * 70)
-    print("\n✓ All GPT-OSS commentary/analysis format tests passed!")
-    print("\nSupported formats:")
-    print("✓ commentary to=TOOL_NAME <|constrain|>json<|message|>{...}")
-    print("✓ analysis to=TOOL_NAME <|constrain|>json<|message|>{...}")
-    print("✓ Multiple commentary/analysis blocks in single response")
+    print("\n✓ All GPT-OSS 'to=' format tests passed!")
+    print("\nSupported formats (ANY prefix before 'to='):")
+    print("✓ commentary to=TOOL_NAME {...}")
+    print("✓ analysis to=TOOL_NAME {...}")
+    print("✓ reflection to=TOOL_NAME {...}")
+    print("✓ planning to=TOOL_NAME {...}")
+    print("✓ <any_channel> to=TOOL_NAME {...}")
+    print("✓ Multiple tool calls in single response")
     print("✓ Variations with/without tokens and whitespace")
+    print("\nKey insight:")
+    print("  We match on 'to=TOOL_NAME' pattern, not specific channel names")
+    print("  This makes it future-proof for any new channel types")
     print("\nConversion:")
-    print("  Input:  commentary to=FILE_EXPLORER__read_file {...}")
-    print("  Input:  analysis to=FILE_EXPLORER__list_directory {...}")
+    print("  Input:  <anything> to=FILE_EXPLORER__read_file {...}")
     print("  Output: TOOL: FILE_EXPLORER__read_file")
     print("          ARGS: {...}")
 
